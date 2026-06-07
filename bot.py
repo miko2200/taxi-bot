@@ -7,7 +7,7 @@ from datetime import datetime, time
 from zoneinfo import ZoneInfo
 import random
 
-TOKEN = "8723525696:AAE5cmEboXRyEkhPAS2H9MyWSnoYDWOJmOI"
+TOKEN = "8723525696:AAGXtq7GhrnHyelPkWIaFsPyRbcJoiMRd8s"
 CHAT_ID = -1002475950058
 
 QUOTES = [
