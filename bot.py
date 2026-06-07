@@ -2,7 +2,7 @@ from telegram.ext import Application, ContextTypes
 from datetime import datetime, time
 from zoneinfo import ZoneInfo
 
-TOKEN = "8723525696:AAFAV08octm20i12U-jgW6N5Fr2fS5ZW0vk"
+TOKEN = "8723525696:AAE5cmEboXRyEkhPAS2H9MyWSnoYDWOJmOI"
 CHAT_ID = -1002475950058
 
 
