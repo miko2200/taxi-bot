@@ -21,12 +21,9 @@ async def send_message(context: ContextTypes.DEFAULT_TYPE):
 
 app = Application.builder().token(TOKEN).build()
 
-app.job_queue.run_daily(
+app.job_queue.run_once(
     send_message,
-    time=time(
-        hour=0,
-        minute=1,
-        tzinfo=ZoneInfo("Asia/Almaty")
+    when=30
     )
 )
 
