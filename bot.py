@@ -1,5 +1,5 @@
 from telegram.ext import Application, ContextTypes
-from datetime import datetime, time
+from datetime import datetime
 from zoneinfo import ZoneInfo
 
 TOKEN = "8723525696:AAE5cmEboXRyEkhPAS2H9MyWSnoYDWOJmOI"
@@ -21,10 +21,10 @@ async def send_message(context: ContextTypes.DEFAULT_TYPE):
 
 app = Application.builder().token(TOKEN).build()
 
+# Тестовая отправка через 30 секунд после запуска
 app.job_queue.run_once(
     send_message,
     when=30
-    )
 )
 
 print("Bot started")
