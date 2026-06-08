@@ -7,7 +7,7 @@ import json
 import gspread
 from google.oauth2.service_account import Credentials
 
-TOKEN = "8723525696:AAFV3tQO92Rc2r15yo4Jq2sbCiKUgOakp3A"
+TOKEN = "8723525696:AAFNDOJBsReI3VPDStRJahMb8do-6WNBbnM"
 CHAT_ID = -1002475950058
 
 SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
