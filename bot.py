@@ -14,6 +14,10 @@ SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
 SHEET_NAME = os.getenv("SHEET_NAME", "Лист1")
 GOOGLE_CREDENTIALS = os.getenv("GOOGLE_CREDENTIALS")
 
+print("SPREADSHEET_ID =", SPREADSHEET_ID)
+print("SHEET_NAME =", SHEET_NAME)
+print("GOOGLE_CREDENTIALS EXISTS =", GOOGLE_CREDENTIALS is not None)
+
 QUOTES = [
     "Успех любит дисциплину.",
     "Большие результаты складываются из маленьких действий.",
