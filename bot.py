@@ -39,6 +39,8 @@ CHAT_ID = int(os.getenv("CHAT_ID", "-1002475950058"))
 SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
 SHEET_NAME = os.getenv("SHEET_NAME", "Лист1")
 GOOGLE_CREDENTIALS = os.getenv("GOOGLE_CREDENTIALS")
+ADMIN_CHAT_ID_VALUE = os.getenv("ADMIN_CHAT_ID", "").strip()
+ADMIN_CHAT_ID = int(ADMIN_CHAT_ID_VALUE) if ADMIN_CHAT_ID_VALUE else None
 
 KIDBURG_SHEET = "Kidburg"
 YONDO_SHEET = "Yondo"
@@ -187,10 +189,97 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Здравствуйте! 👋\n\n"
         "🚕 Расходы на такси отправляйте в группу «Такси КБ».\n"
         "🛍 Остальные покупки оформляйте здесь, в личных сообщениях.\n\n"
+        "🔒 Отправленные данные доступны администратору.\n\n"
         "Выберите нужное действие:",
         reply_markup=main_menu(),
     )
     return CHOOSE_ACTION
+
+
+async def myid_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "Ваш Telegram ID:\n"
+        f"<code>{update.effective_user.id}</code>\n\n"
+        "Для администраторского журнала сохраните это число в Railway "
+        "как переменную ADMIN_CHAT_ID.",
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def monitor_private_text(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+):
+    """Отправляет администратору копии входящих текстов из личного чата."""
+    if (
+        not ADMIN_CHAT_ID
+        or not update.message
+        or update.effective_chat.type != ChatType.PRIVATE
+        or not update.effective_user
+        or update.effective_user.id == ADMIN_CHAT_ID
+    ):
+        return
+
+    user = update.effective_user
+    username = f"@{html.escape(user.username)}" if user.username else "—"
+    message_text = html.escape(update.message.text or "")[:3500]
+    admin_text = (
+        "📩 <b>Сообщение боту</b>\n"
+        f"Имя: {html.escape(user.full_name)}\n"
+        f"Username: {username}\n"
+        f"ID: <code>{user.id}</code>\n\n"
+        f"{message_text}"
+    )
+
+    try:
+        await context.bot.send_message(
+            chat_id=ADMIN_CHAT_ID,
+            text=admin_text,
+            parse_mode=ParseMode.HTML,
+        )
+    except Exception:
+        logger.exception("Не удалось отправить личное сообщение администратору")
+
+
+async def monitor_private_callback(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+):
+    """Сообщает администратору, какие кнопки нажимают в личном чате."""
+    query = update.callback_query
+    if (
+        not ADMIN_CHAT_ID
+        or not query
+        or update.effective_chat.type != ChatType.PRIVATE
+        or not update.effective_user
+        or update.effective_user.id == ADMIN_CHAT_ID
+    ):
+        return
+
+    button_names = {
+        "action:taxi": "Шаблон такси",
+        "action:purchase": "Добавить покупку",
+        "action:back": "Назад",
+        "sheet:Kidburg": "Лист Kidburg",
+        "sheet:Yondo": "Лист Yondo",
+        "date:today": "Дата: сегодня",
+    }
+    action = button_names.get(query.data, query.data or "Неизвестная кнопка")
+    user = update.effective_user
+    username = f"@{html.escape(user.username)}" if user.username else "—"
+
+    try:
+        await context.bot.send_message(
+            chat_id=ADMIN_CHAT_ID,
+            text=(
+                "🔘 <b>Нажата кнопка</b>\n"
+                f"Имя: {html.escape(user.full_name)}\n"
+                f"Username: {username}\n"
+                f"ID: <code>{user.id}</code>\n\n"
+                f"Действие: {html.escape(action)}"
+            ),
+            parse_mode=ParseMode.HTML,
+        )
+    except Exception:
+        logger.exception("Не удалось отправить нажатие кнопки администратору")
 
 
 async def show_taxi_template(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -516,11 +605,17 @@ def build_app() -> Application:
     )
 
     app.add_handler(purchase_conversation)
+    app.add_handler(CommandHandler("myid", myid_command))
     app.add_handler(CommandHandler("status", status_command))
     app.add_handler(CommandHandler("now", now_command))
     app.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, handle_group_message)
     )
+    app.add_handler(
+        MessageHandler(filters.ChatType.PRIVATE & filters.TEXT, monitor_private_text),
+        group=1,
+    )
+    app.add_handler(CallbackQueryHandler(monitor_private_callback), group=1)
     app.add_error_handler(error_handler)
 
     app.job_queue.run_daily(
