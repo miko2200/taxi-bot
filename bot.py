@@ -43,7 +43,7 @@ GOOGLE_CREDENTIALS = os.getenv("GOOGLE_CREDENTIALS")
 KIDBURG_SHEET = "Kidburg"
 YONDO_SHEET = "Yondo"
 
-CHOOSE_ACTION, CHOOSE_SHEET, ENTER_AMOUNT, ENTER_DATE, ENTER_PAYER = range(5)
+CHOOSE_ACTION, CHOOSE_SHEET, ENTER_AMOUNT, ENTER_DATE, ENTER_PAYER, ENTER_NOTE = range(6)
 
 QUOTES = [
     "Успех любит дисциплину.",
@@ -306,13 +306,36 @@ async def receive_payer(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Данные устарели. Нажмите /start и начните заново.")
         return ConversationHandler.END
 
+    purchase["payer"] = payer
+    await update.message.reply_text(
+        "Введите примечание к покупке. Если примечания нет, отправьте: -"
+    )
+    return ENTER_NOTE
+
+
+async def receive_note(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    note = " ".join(update.message.text.split()) or "-"
+    if len(note) > 300:
+        await update.message.reply_text(
+            "⚠️ Примечание слишком длинное. Используйте не больше 300 символов."
+        )
+        return ENTER_NOTE
+
+    purchase = context.user_data.get("purchase")
+    if not purchase or not all(
+        key in purchase for key in ("sheet", "amount", "date", "payer")
+    ):
+        await update.message.reply_text("Данные устарели. Нажмите /start и начните заново.")
+        return ConversationHandler.END
+
     saved_at = datetime.now(TIMEZONE).strftime("%d.%m.%Y %H:%M:%S")
     row = [
         purchase["date"],
         purchase["amount"],
-        payer,
+        purchase["payer"],
         sender_name(update),
         saved_at,
+        note,
     ]
 
     try:
@@ -321,9 +344,9 @@ async def receive_payer(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.exception("Не удалось записать покупку в Google Sheets")
         await update.message.reply_text(
             "❌ Не удалось записать данные в таблицу. Проверьте доступ к листу "
-            "и попробуйте отправить имя ещё раз."
+            "и попробуйте отправить примечание ещё раз."
         )
-        return ENTER_PAYER
+        return ENTER_NOTE
 
     sheet_name = purchase["sheet"]
     amount = purchase["amount"]
@@ -335,7 +358,8 @@ async def receive_payer(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Лист: {sheet_name}\n"
         f"Дата: {purchase_date}\n"
         f"Сумма: {amount} ₸\n"
-        f"Кто платил: {payer}",
+        f"Кто платил: {purchase['payer']}\n"
+        f"Примечание: {note}",
         reply_markup=main_menu(),
     )
     return CHOOSE_ACTION
@@ -479,6 +503,9 @@ def build_app() -> Application:
             ],
             ENTER_PAYER: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, receive_payer)
+            ],
+            ENTER_NOTE: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, receive_note)
             ],
         },
         fallbacks=[
