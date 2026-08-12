@@ -44,6 +44,7 @@ ADMIN_CHAT_ID = int(ADMIN_CHAT_ID_VALUE) if ADMIN_CHAT_ID_VALUE else None
 
 KIDBURG_SHEET = "Kidburg"
 YONDO_SHEET = "Yondo"
+VOKRUG_SVETA_SHEET = "ВокругСвета"
 
 CHOOSE_ACTION, CHOOSE_SHEET, ENTER_AMOUNT, ENTER_DATE, ENTER_PAYER, ENTER_NOTE = range(6)
 
@@ -114,6 +115,11 @@ def sheet_menu() -> InlineKeyboardMarkup:
             [
                 InlineKeyboardButton("🎡 Kidburg", callback_data="sheet:Kidburg"),
                 InlineKeyboardButton("🎮 Yondo", callback_data="sheet:Yondo"),
+            ],
+            [
+                InlineKeyboardButton(
+                    "🌍 Вокруг света", callback_data="sheet:ВокругСвета"
+                )
             ],
             [InlineKeyboardButton("⬅️ Назад", callback_data="action:back")],
         ]
@@ -260,6 +266,7 @@ async def monitor_private_callback(
         "action:back": "Назад",
         "sheet:Kidburg": "Лист Kidburg",
         "sheet:Yondo": "Лист Yondo",
+        "sheet:ВокругСвета": "Лист ВокругСвета",
         "date:today": "Дата: сегодня",
     }
     action = button_names.get(query.data, query.data or "Неизвестная кнопка")
@@ -327,7 +334,7 @@ async def select_sheet(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     sheet_name = query.data.split(":", 1)[1]
-    if sheet_name not in {KIDBURG_SHEET, YONDO_SHEET}:
+    if sheet_name not in {KIDBURG_SHEET, YONDO_SHEET, VOKRUG_SVETA_SHEET}:
         await query.edit_message_text("Неизвестный лист. Нажмите /start ещё раз.")
         return ConversationHandler.END
 
@@ -579,7 +586,7 @@ def build_app() -> Application:
             ],
             CHOOSE_SHEET: [
                 CallbackQueryHandler(
-                    select_sheet, pattern=r"^sheet:(Kidburg|Yondo)$"
+                    select_sheet, pattern=r"^sheet:(Kidburg|Yondo|ВокругСвета)$"
                 ),
                 CallbackQueryHandler(back_to_main, pattern=r"^action:back$"),
             ],
