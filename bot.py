@@ -41,12 +41,22 @@ SHEET_NAME = os.getenv("SHEET_NAME", "Лист1")
 GOOGLE_CREDENTIALS = os.getenv("GOOGLE_CREDENTIALS")
 ADMIN_CHAT_ID_VALUE = os.getenv("ADMIN_CHAT_ID", "").strip()
 ADMIN_CHAT_ID = int(ADMIN_CHAT_ID_VALUE) if ADMIN_CHAT_ID_VALUE else None
+RECEIPTS_CHAT_ID_VALUE = os.getenv("RECEIPTS_CHAT_ID", "").strip()
+RECEIPTS_CHAT_ID = int(RECEIPTS_CHAT_ID_VALUE) if RECEIPTS_CHAT_ID_VALUE else None
 
 KIDBURG_SHEET = "Kidburg"
 YONDO_SHEET = "Yondo"
 VOKRUG_SVETA_SHEET = "ВокругСвета"
 
-CHOOSE_ACTION, CHOOSE_SHEET, ENTER_AMOUNT, ENTER_DATE, ENTER_PAYER, ENTER_NOTE = range(6)
+(
+    CHOOSE_ACTION,
+    CHOOSE_SHEET,
+    ENTER_AMOUNT,
+    ENTER_DATE,
+    ENTER_PAYER,
+    ENTER_NOTE,
+    ENTER_RECEIPT,
+) = range(7)
 
 QUOTES = [
     "Успех любит дисциплину.",
@@ -144,6 +154,20 @@ def sender_name(update: Update) -> str:
     return user.full_name
 
 
+def telegram_message_link(chat, message_id: int) -> str:
+    """Создаёт постоянную ссылку на сообщение в канале или супергруппе."""
+    if chat.username:
+        return f"https://t.me/{chat.username}/{message_id}"
+
+    chat_id = str(chat.id)
+    if chat_id.startswith("-100"):
+        return f"https://t.me/c/{chat_id[4:]}/{message_id}"
+
+    raise RuntimeError(
+        "Хранилище чеков должно быть Telegram-каналом или супергруппой"
+    )
+
+
 def parse_amount(text: str):
     cleaned = text.lower()
     for token in ("тенге", "тг", "₸"):
@@ -208,6 +232,16 @@ async def myid_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"<code>{update.effective_user.id}</code>\n\n"
         "Для администраторского журнала сохраните это число в Railway "
         "как переменную ADMIN_CHAT_ID.",
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def chatid_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.effective_message.reply_text(
+        "ID этого чата:\n"
+        f"<code>{update.effective_chat.id}</code>\n\n"
+        "Для хранилища чеков сохраните это число в Railway как "
+        "переменную RECEIPTS_CHAT_ID.",
         parse_mode=ParseMode.HTML,
     )
 
@@ -424,38 +458,131 @@ async def receive_note(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Данные устарели. Нажмите /start и начните заново.")
         return ConversationHandler.END
 
+    purchase["note"] = note
+    await update.message.reply_text(
+        "🧾 Теперь отправьте фотографию или скриншот чека.\n\n"
+        "Можно отправить изображение как фото или как файл. Также принимается PDF."
+    )
+    return ENTER_RECEIPT
+
+
+async def receipt_required(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.effective_message.reply_text(
+        "⚠️ Ожидаю чек. Отправьте фотографию, изображение или PDF-файл."
+    )
+    return ENTER_RECEIPT
+
+
+async def receive_receipt(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    purchase = context.user_data.get("purchase")
+    if not purchase or not all(
+        key in purchase for key in ("sheet", "amount", "date", "payer", "note")
+    ):
+        await update.effective_message.reply_text(
+            "Данные устарели. Нажмите /start и начните заново."
+        )
+        return ConversationHandler.END
+
+    if not RECEIPTS_CHAT_ID:
+        await update.effective_message.reply_text(
+            "❌ Хранилище чеков ещё не настроено. Сообщите администратору: "
+            "в Railway отсутствует RECEIPTS_CHAT_ID."
+        )
+        return ENTER_RECEIPT
+
+    message = update.effective_message
+    document = message.document
+    is_supported_document = bool(
+        document
+        and (
+            (document.mime_type or "").startswith("image/")
+            or document.mime_type == "application/pdf"
+        )
+    )
+    if not message.photo and not is_supported_document:
+        return await receipt_required(update, context)
+
     saved_at = datetime.now(TIMEZONE).strftime("%d.%m.%Y %H:%M:%S")
+    receipt_caption = (
+        "🧾 Чек по покупке\n"
+        f"Лист: {purchase['sheet']}\n"
+        f"Дата покупки: {purchase['date']}\n"
+        f"Сумма: {purchase['amount']} ₸\n"
+        f"Кто платил: {purchase['payer']}\n"
+        f"Примечание: {purchase['note']}\n"
+        f"Отправил: {sender_name(update)}\n"
+        f"Добавлено: {saved_at}"
+    )
+
+    archived_message = None
+    try:
+        if message.photo:
+            archived_message = await context.bot.send_photo(
+                chat_id=RECEIPTS_CHAT_ID,
+                photo=message.photo[-1].file_id,
+                caption=receipt_caption,
+            )
+        else:
+            archived_message = await context.bot.send_document(
+                chat_id=RECEIPTS_CHAT_ID,
+                document=document.file_id,
+                caption=receipt_caption,
+            )
+
+        receipt_url = telegram_message_link(
+            archived_message.chat, archived_message.message_id
+        )
+    except Exception:
+        logger.exception("Не удалось сохранить чек в Telegram-хранилище")
+        await message.reply_text(
+            "❌ Не удалось сохранить чек. Проверьте, что бот добавлен "
+            "администратором в канал чеков, и отправьте файл ещё раз."
+        )
+        return ENTER_RECEIPT
+
+    # Ссылка на чек специально записывается в колонку G.
     row = [
         purchase["date"],
         purchase["amount"],
         purchase["payer"],
         sender_name(update),
         saved_at,
-        note,
+        purchase["note"],
+        receipt_url,
     ]
 
     try:
         await asyncio.to_thread(append_row, purchase["sheet"], row)
     except Exception:
         logger.exception("Не удалось записать покупку в Google Sheets")
-        await update.message.reply_text(
+        try:
+            await context.bot.delete_message(
+                chat_id=archived_message.chat.id,
+                message_id=archived_message.message_id,
+            )
+        except Exception:
+            logger.warning("Не удалось удалить чек после ошибки Google Sheets")
+        await message.reply_text(
             "❌ Не удалось записать данные в таблицу. Проверьте доступ к листу "
-            "и попробуйте отправить примечание ещё раз."
+            "и отправьте чек ещё раз."
         )
-        return ENTER_NOTE
+        return ENTER_RECEIPT
 
     sheet_name = purchase["sheet"]
     amount = purchase["amount"]
     purchase_date = purchase["date"]
+    payer = purchase["payer"]
+    note = purchase["note"]
     context.user_data.pop("purchase", None)
 
-    await update.message.reply_text(
+    await message.reply_text(
         "✅ Покупка добавлена в таблицу\n\n"
         f"Лист: {sheet_name}\n"
         f"Дата: {purchase_date}\n"
         f"Сумма: {amount} ₸\n"
-        f"Кто платил: {purchase['payer']}\n"
-        f"Примечание: {note}",
+        f"Кто платил: {payer}\n"
+        f"Примечание: {note}\n"
+        f"Чек: {receipt_url}",
         reply_markup=main_menu(),
     )
     return CHOOSE_ACTION
@@ -603,6 +730,13 @@ def build_app() -> Application:
             ENTER_NOTE: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, receive_note)
             ],
+            ENTER_RECEIPT: [
+                MessageHandler(
+                    filters.PHOTO | filters.Document.ALL,
+                    receive_receipt,
+                ),
+                MessageHandler(filters.ALL & ~filters.COMMAND, receipt_required),
+            ],
         },
         fallbacks=[
             CommandHandler("start", start_command),
@@ -613,6 +747,7 @@ def build_app() -> Application:
 
     app.add_handler(purchase_conversation)
     app.add_handler(CommandHandler("myid", myid_command))
+    app.add_handler(CommandHandler("chatid", chatid_command))
     app.add_handler(CommandHandler("status", status_command))
     app.add_handler(CommandHandler("now", now_command))
     app.add_handler(
