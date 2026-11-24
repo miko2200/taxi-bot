@@ -84,7 +84,15 @@ def get_sheet(sheet_name: str):
 def append_row(sheet_name: str, values: list):
     """Синхронная запись в Google Sheets; вызывается через asyncio.to_thread."""
     worksheet = get_sheet(sheet_name)
-    worksheet.append_row(values, value_input_option="RAW")
+    # Ищем основную таблицу только в колонках A:F, а затем добавляем все семь
+    # значений в A:G. Без table_range Google Sheets
+    # иногда определяет соседний диапазон как отдельную таблицу и начинает
+    # записывать данные со столбца G вместо столбца A.
+    worksheet.append_row(
+        values,
+        value_input_option="RAW",
+        table_range="A:F",
+    )
 
 
 def get_taxi_text() -> str:
